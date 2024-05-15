@@ -1,0 +1,7 @@
+*.sw?
+*.braw
+*.bmp
+*.png
+*.jpg
+build
+brawshot

@@ -68,7 +68,7 @@ void output_image(unsigned int width, unsigned int height, uint8_t* image,
 	unsigned char* jpeg_buf = NULL;
 	unsigned long jpeg_size = 0;
 
-	if(tjCompress2(tjinst, image, width, 0, height, TJPF_BGR, &jpeg_buf,
+	if(tjCompress2(tjinst, image, width, 0, height, TJPF_BGRX, &jpeg_buf,
 				&jpeg_size, JPEG_SUBSAMP, JPEG_QUALITY,
 				JPEG_FLAGS) < 0) {
 		printf("compression error\n");
@@ -157,7 +157,7 @@ public:
 			}
 
 			if(userData->output) {
-				uint8_t* output = new uint8_t[width * height * 3];
+				uint8_t* output = new uint8_t[width * height * 4];
 				userData->processor->output(output);
 
 				--jobsInFlight;

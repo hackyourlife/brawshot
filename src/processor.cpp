@@ -310,7 +310,7 @@ void VideoProcessor::output(uint8_t* image)
 	glDrawArrays(GL_TRIANGLES, 0, QUAD_VTX_CNT);
 
 	GL_ERROR();
-	glReadPixels(0, 0, width, height, GL_BGR, GL_UNSIGNED_BYTE, image);
+	glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, image);
 	GL_ERROR();
 	egl.unbind();
 }

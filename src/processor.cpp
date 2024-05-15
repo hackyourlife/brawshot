@@ -172,6 +172,7 @@ VideoProcessor::VideoProcessor(unsigned int width, unsigned int height,
 	output_shader_frame = output_shader->get_uniform("frame");
 	output_shader_lut = output_shader->get_uniform("lut");
 	output_shader_samples = output_shader->get_uniform("samples");
+	output_shader_use_lut = output_shader->get_uniform("use_lut");
 
 	egl.unbind();
 }
@@ -293,14 +294,17 @@ void VideoProcessor::output(uint8_t* image)
 		glBindTexture(GL_TEXTURE_2D, accumulation_2_tex);
 	}
 
-	glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_3D, lut_tex);
+	if(lut != nullptr) {
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_3D, lut_tex);
+	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, output_fb);
 
 	glUniform1i(output_shader_frame, 0);
 	glUniform1i(output_shader_lut, 1);
 	glUniform1ui(output_shader_samples, samples);
+	glUniform1i(output_shader_use_lut, lut != nullptr);
 
 	glBindVertexArray(quad_vao);
 	glDrawArrays(GL_TRIANGLES, 0, QUAD_VTX_CNT);

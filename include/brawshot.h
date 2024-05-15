@@ -40,6 +40,7 @@ class VideoProcessor {
 		GLuint		output_shader_frame;
 		GLuint		output_shader_lut;
 		GLuint		output_shader_samples;
+		GLuint		output_shader_use_lut;
 
 		GLuint		input_tex;
 		GLuint		accumulation_1_tex;

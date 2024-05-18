@@ -336,7 +336,7 @@ int main(int argc, const char** argv)
 	unsigned int width = 0;
 	unsigned int height = 0;
 
-	factory = CreateBlackmagicRawFactoryInstanceFromPath("/usr/lib/blackmagic/BlackmagicRAWSDK/Linux/Libraries/");
+	factory = CreateBlackmagicRawFactoryInstanceFromPath(BRAWSDK_ROOT "/Libraries/");
 	if(factory == nullptr) {
 		std::cerr << "Failed to create IBlackmagicRawFactory!" << std::endl;
 		goto end;

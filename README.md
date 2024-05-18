@@ -130,7 +130,7 @@ Building
 Run `make` to compile the tool. If the BRAW SDK is installed in a different
 location than the one chosen by
 [blackmagic-raw-sdk](https://aur.archlinux.org/packages/blackmagic-raw-sdk) you
-have to adjust the path in the Makefile and in src/main.cpp.
+have to adjust the path in the Makefile (variable `BRAWSDK`).
 
 
 Usage

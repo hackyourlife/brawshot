@@ -18,9 +18,12 @@ SOURCES		:=	src
 GLSLSOURCES	:=	glsl
 BUILD		:=	build
 
+BRAWSDK		:=	/usr/lib/blackmagic/BlackmagicRAWSDK/Linux
+
 ASAN		:=	#-fsanitize=address
 OPTFLAGS	:=	-O3 -g
-DEFINES		:=	-DUNIX -DGL_GLEXT_PROTOTYPES
+DEFINES		:=	-DUNIX -DGL_GLEXT_PROTOTYPES \
+			-DBRAWSDK_ROOT=\"$(BRAWSDK)\"
 
 CFLAGS		:=	$(OPTFLAGS) -Wall -std=c99 \
 			-ffunction-sections -fdata-sections \
@@ -47,7 +50,7 @@ export	VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
 			$(foreach dir,$(GLSLSOURCES),$(CURDIR)/$(dir)) $(CURDIR)
 export	INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 				-I$(CURDIR)/$(BUILD) \
-				-I/usr/lib/blackmagic/BlackmagicRAWSDK/Linux/Include
+				-I$(BRAWSDK)/Include
 export	OUTPUT	:=	$(CURDIR)/$(TARGET)
 
 .PHONY: $(BUILD) clean all
@@ -57,9 +60,11 @@ $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
+all: $(BUILD)
+
 clean:
 	@echo "[CLEAN]"
-	@rm -rf $(BUILD) $(TFILES) $(OFILES) demo
+	@rm -rf $(BUILD) $(TFILES) $(OFILES)
 
 $(TARGET): $(TFILES)
 
@@ -75,7 +80,7 @@ all: $(OUTPUT)
 $(OUTPUT): $(TARGET).elf
 	@cp $(TARGET).elf $(OUTPUT)
 
-BlackmagicRawAPIDispatch.o: /usr/lib/blackmagic/BlackmagicRAWSDK/Linux/Include/BlackmagicRawAPIDispatch.cpp
+BlackmagicRawAPIDispatch.o: $(BRAWSDK)/Include/BlackmagicRawAPIDispatch.cpp
 	@echo "[CXX]   $(notdir $@)"
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) -c $< -o $@
 
@@ -87,7 +92,7 @@ BlackmagicRawAPIDispatch.o: /usr/lib/blackmagic/BlackmagicRAWSDK/Linux/Include/B
 %.o: %.cpp
 	@echo "[CXX]   $(notdir $@)"
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) -c $< -o $@
-	@#$(CPP) -S $(CFLAGS) -o $(@:.o=.s) $< # create assembly file
+	@#$(CXX) -S $(CXXFLAGS) -o $(@:.o=.s) $< # create assembly file
 
 %.o: %.glsl
 	@echo "[GLSL]  $(notdir $@)"

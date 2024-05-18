@@ -66,8 +66,8 @@ static void check_error(const char* filename, unsigned int line)
 #endif
 
 VideoProcessor::VideoProcessor(unsigned int width, unsigned int height,
-				const char* lut_filename)
-	: width(width), height(height), samples(0), lut(nullptr),
+				float gain, const char* lut_filename)
+	: width(width), height(height), samples(0), gain(gain), lut(nullptr),
 			accumulate_shader(nullptr), output_shader(nullptr),
 			current_accumulator(false)
 {
@@ -172,6 +172,7 @@ VideoProcessor::VideoProcessor(unsigned int width, unsigned int height,
 	output_shader_frame = output_shader->get_uniform("frame");
 	output_shader_lut = output_shader->get_uniform("lut");
 	output_shader_samples = output_shader->get_uniform("samples");
+	output_shader_gain = output_shader->get_uniform("gain");
 	output_shader_use_lut = output_shader->get_uniform("use_lut");
 
 	egl.unbind();
@@ -304,6 +305,7 @@ void VideoProcessor::output(uint8_t* image)
 	glUniform1i(output_shader_frame, 0);
 	glUniform1i(output_shader_lut, 1);
 	glUniform1ui(output_shader_samples, samples);
+	glUniform1f(output_shader_gain, gain);
 	glUniform1i(output_shader_use_lut, lut != nullptr);
 
 	glBindVertexArray(quad_vao);

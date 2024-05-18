@@ -8,7 +8,7 @@
 class VideoProcessor {
 	public:
 		VideoProcessor(unsigned int width, unsigned int height,
-				const char* lut_filename);
+				float gain, const char* lut_filename);
 		~VideoProcessor();
 
 		void info() {
@@ -28,6 +28,8 @@ class VideoProcessor {
 
 		unsigned int	samples;
 
+		float		gain;
+
 		LUT*		lut;
 
 		Shader*		accumulate_shader;
@@ -40,6 +42,7 @@ class VideoProcessor {
 		GLuint		output_shader_frame;
 		GLuint		output_shader_lut;
 		GLuint		output_shader_samples;
+		GLuint		output_shader_gain;
 		GLuint		output_shader_use_lut;
 
 		GLuint		input_tex;

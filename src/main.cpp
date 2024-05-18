@@ -168,7 +168,7 @@ public:
 };
 
 HRESULT ProcessClip(IBlackmagicRawClip* clip, const char* lut_filename,
-		unsigned int window_size)
+		unsigned int window_size, float gain)
 {
 	HRESULT result;
 
@@ -181,7 +181,7 @@ HRESULT ProcessClip(IBlackmagicRawClip* clip, const char* lut_filename,
 	result = clip->GetWidth(&width);
 	result = clip->GetHeight(&height);
 
-	VideoProcessor processor(width, height, lut_filename);
+	VideoProcessor processor(width, height, gain, lut_filename);
 
 	result = clip->GetFrameCount(&frameCount);
 
@@ -196,7 +196,7 @@ HRESULT ProcessClip(IBlackmagicRawClip* clip, const char* lut_filename,
 			continue;
 		}
 
-		float percent = frameIndex * 100.0 / frameCount;
+		float percent = frameIndex * 100.0 / (frameCount - 1);
 		printf("\r\x1b[KProcessing frame %lu [%5.1f%%]", frameIndex, percent);
 		fflush(stdout);
 
@@ -281,6 +281,7 @@ int main(int argc, const char** argv)
 	const char* lut_filename = nullptr;
 	const char* clipName = nullptr;
 	unsigned int window_size = 100;
+	float gain = 1.0f;
 
 	argc--;
 	argv++;
@@ -296,6 +297,10 @@ int main(int argc, const char** argv)
 			argv++;
 		} else if(!strcmp(*argv, "-i") && argc > 1) {
 			clipName = argv[1];
+			argc--;
+			argv++;
+		} else if(!strcmp(*argv, "-g") && argc > 1) {
+			gain = (float) atof(argv[1]);
 			argc--;
 			argv++;
 		} else if(!strcmp(*argv, "-w") && argc > 1) {
@@ -367,7 +372,7 @@ int main(int argc, const char** argv)
 		goto end;
 	}
 
-	ProcessClip(clip, lut_filename, window_size);
+	ProcessClip(clip, lut_filename, window_size, gain);
 
 	codec->FlushJobs();
 

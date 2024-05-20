@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <GL/gl.h>
@@ -12,6 +13,9 @@ extern "C" {
 
 	extern const char output_vert[];
 	extern const char output_frag[];
+
+	extern const char output_raw_vert[];
+	extern const char output_raw_frag[];
 }
 
 static const float quad_vertices[] = {
@@ -67,10 +71,13 @@ static void check_error(const char* filename, unsigned int line)
 
 VideoProcessor::VideoProcessor(unsigned int width, unsigned int height,
 				float gain, const char* lut_filename)
-	: width(width), height(height), samples(0), gain(gain), lut(nullptr),
+	: width(width), height(height), samples(0), gain(gain), use_ref(false),
+			ref_after_lut(false), lut(nullptr),
 			accumulate_shader(nullptr), output_shader(nullptr),
 			current_accumulator(false)
 {
+	memset(ref_mean, 0, sizeof(ref_mean));
+
 	egl.make_current();
 
 	// create input (video frame) texture
@@ -99,11 +106,29 @@ VideoProcessor::VideoProcessor(unsigned int width, unsigned int height,
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	GL_ERROR();
 
+	// create black reference frame texture
+	glGenTextures(1, &input_ref_tex);
+	glBindTexture(GL_TEXTURE_2D, input_ref_tex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, width, height, 0,
+			GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	GL_ERROR();
+
 	// create output texture
 	glGenTextures(1, &output_tex);
 	glBindTexture(GL_TEXTURE_2D, output_tex);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA,
 			GL_UNSIGNED_BYTE, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	GL_ERROR();
+
+	// create RAW output texture
+	glGenTextures(1, &output_raw_tex);
+	glBindTexture(GL_TEXTURE_2D, output_raw_tex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, width, height, 0,
+			GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	GL_ERROR();
@@ -148,6 +173,17 @@ VideoProcessor::VideoProcessor(unsigned int width, unsigned int height,
 		exit(1);
 	}
 
+	// create RAW output framebuffer
+	glGenFramebuffers(1, &output_raw_fb);
+	glBindFramebuffer(GL_FRAMEBUFFER, output_raw_fb);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+			GL_TEXTURE_2D, output_raw_tex, 0);
+	GL_ERROR();
+	if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		printf("Error configuring framebuffer\n");
+		exit(1);
+	}
+
 	// create VBO/VAO
 	glGenVertexArrays(1, &quad_vao);
 	glBindVertexArray(quad_vao);
@@ -164,16 +200,24 @@ VideoProcessor::VideoProcessor(unsigned int width, unsigned int height,
 
 	accumulate_shader = new Shader(accumulate_vert, accumulate_frag);
 	output_shader = new Shader(output_vert, output_frag);
+	output_raw_shader = new Shader(output_raw_vert, output_raw_frag);
 
 	accumulate_shader_frame = accumulate_shader->get_uniform("frame");
 	accumulate_shader_tex = accumulate_shader->get_uniform("accumulator");
 	accumulate_shader_add = accumulate_shader->get_uniform("add");
 
 	output_shader_frame = output_shader->get_uniform("frame");
+	output_shader_ref = output_shader->get_uniform("ref");
 	output_shader_lut = output_shader->get_uniform("lut");
 	output_shader_samples = output_shader->get_uniform("samples");
 	output_shader_gain = output_shader->get_uniform("gain");
+	output_shader_ref_mean = output_shader->get_uniform("ref_mean");
 	output_shader_use_lut = output_shader->get_uniform("use_lut");
+	output_shader_use_ref = output_shader->get_uniform("use_ref");
+	output_shader_ref_after_lut = output_shader->get_uniform("ref_after_lut");
+
+	output_raw_shader_frame = output_raw_shader->get_uniform("frame");
+	output_raw_shader_samples = output_raw_shader->get_uniform("samples");
 
 	egl.unbind();
 }
@@ -198,6 +242,39 @@ VideoProcessor::~VideoProcessor()
 	if(lut != nullptr) {
 		glDeleteTextures(1, &lut_tex);
 		delete lut;
+	}
+
+	egl.unbind();
+}
+
+void VideoProcessor::load_reference(uint16_t* image, bool after_lut)
+{
+	egl.make_current();
+	GL_ERROR();
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, input_ref_tex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16UI, width, height, 0,
+			GL_RGBA_INTEGER, GL_UNSIGNED_SHORT, image);
+
+	GL_ERROR();
+
+	uint16_t* pixels = image;
+	uint64_t sum[4] = { 0 };
+	size_t count = width * height;
+	for(size_t i = 0; i < count; i++) {
+		sum[0] += pixels[0];
+		sum[1] += pixels[1];
+		sum[2] += pixels[2];
+		sum[3] += pixels[3];
+		pixels += 4;
+	}
+
+	use_ref = true;
+	ref_after_lut = after_lut;
+
+	for(unsigned int i = 0; i < 4; i++) {
+		ref_mean[i] = sum[i] / count;
 	}
 
 	egl.unbind();
@@ -295,24 +372,60 @@ void VideoProcessor::output(uint8_t* image)
 		glBindTexture(GL_TEXTURE_2D, accumulation_2_tex);
 	}
 
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, input_ref_tex);
+
 	if(lut != nullptr) {
-		glActiveTexture(GL_TEXTURE1);
+		glActiveTexture(GL_TEXTURE2);
 		glBindTexture(GL_TEXTURE_3D, lut_tex);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, output_fb);
 
 	glUniform1i(output_shader_frame, 0);
-	glUniform1i(output_shader_lut, 1);
+	glUniform1i(output_shader_ref, 1);
+	glUniform1i(output_shader_lut, 2);
 	glUniform1ui(output_shader_samples, samples);
 	glUniform1f(output_shader_gain, gain);
+	glUniform4uiv(output_shader_ref_mean, 1, ref_mean);
 	glUniform1i(output_shader_use_lut, lut != nullptr);
+	glUniform1i(output_shader_use_ref, use_ref ? 1 : 0);
+	glUniform1i(output_shader_ref_after_lut, ref_after_lut ? 1 : 0);
 
 	glBindVertexArray(quad_vao);
 	glDrawArrays(GL_TRIANGLES, 0, QUAD_VTX_CNT);
 
 	GL_ERROR();
 	glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, image);
+	GL_ERROR();
+	egl.unbind();
+}
+
+void VideoProcessor::output_raw(uint16_t* image)
+{
+	egl.make_current();
+
+	glViewport(0, 0, width, height);
+	output_raw_shader->use();
+
+	glActiveTexture(GL_TEXTURE0);
+	if(current_accumulator) {
+		glBindTexture(GL_TEXTURE_2D, accumulation_1_tex);
+	} else {
+		glBindTexture(GL_TEXTURE_2D, accumulation_2_tex);
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, output_raw_fb);
+
+	glUniform1i(output_raw_shader_frame, 0);
+	glUniform1ui(output_raw_shader_samples, samples);
+
+	glBindVertexArray(quad_vao);
+	glDrawArrays(GL_TRIANGLES, 0, QUAD_VTX_CNT);
+
+	GL_ERROR();
+	glReadPixels(0, 0, width, height, GL_RGBA_INTEGER, GL_UNSIGNED_SHORT,
+			image);
 	GL_ERROR();
 	egl.unbind();
 }

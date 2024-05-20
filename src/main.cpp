@@ -26,17 +26,26 @@
 
 static const BlackmagicRawResourceFormat s_resourceFormat = blackmagicRawResourceFormatRGBAU16;
 static const char* outputFileName = "output";
+static const char* ref_filename = nullptr;
 
 static const int s_maxJobsInFlight = 1;
 static std::atomic<int> jobsInFlight = {0};
 
 static tjhandle tjinst = nullptr;
 
+static bool single = false;
+static bool raw_dump = false;
+static bool ref_after_lut = false;
+
 void output_image(unsigned int width, unsigned int height, uint8_t* image,
 		unsigned long index)
 {
 	char filename[256];
-	sprintf(filename, "%s-%04lu.jpg", outputFileName, index);
+	if(single) {
+		strcpy(filename, outputFileName);
+	} else {
+		sprintf(filename, "%s-%04lu.jpg", outputFileName, index);
+	}
 
 	unsigned char* jpeg_buf = NULL;
 	unsigned long jpeg_size = 0;
@@ -52,6 +61,21 @@ void output_image(unsigned int width, unsigned int height, uint8_t* image,
 		fclose(f);
 		tjFree(jpeg_buf);
 	}
+}
+
+void output_raw(unsigned int width, unsigned int height, uint16_t* image,
+		unsigned long index)
+{
+	char filename[256];
+	if(single) {
+		strcpy(filename, outputFileName);
+	} else {
+		sprintf(filename, "%s-%04lu.raw", outputFileName, index);
+	}
+
+	FILE* f = fopen(filename, "wb");
+	fwrite(image, width * height * sizeof(uint16_t), 4, f);
+	fclose(f);
 }
 
 struct UserData {
@@ -130,13 +154,23 @@ public:
 			}
 
 			if(userData->output) {
-				uint8_t* output = new uint8_t[width * height * 4];
-				userData->processor->output(output);
+				if(raw_dump) {
+					uint16_t* output = new uint16_t[width * height * 4];
+					userData->processor->output_raw(output);
 
-				--jobsInFlight;
-				unsigned long index = userData->index;
-				output_image(width, height, output, index);
-				delete[] output;
+					--jobsInFlight;
+					unsigned long index = userData->index;
+					output_raw(width, height, output, index);
+					delete[] output;
+				} else {
+					uint8_t* output = new uint8_t[width * height * 4];
+					userData->processor->output(output);
+
+					--jobsInFlight;
+					unsigned long index = userData->index;
+					output_image(width, height, output, index);
+					delete[] output;
+				}
 			} else {
 				--jobsInFlight;
 			}
@@ -183,9 +217,21 @@ HRESULT ProcessClip(IBlackmagicRawClip* clip, const char* lut_filename,
 
 	VideoProcessor processor(width, height, gain, lut_filename);
 
+	if(ref_filename != nullptr) {
+		FILE* f = fopen(ref_filename, "rb");
+		uint16_t* image = new uint16_t[width * height * 4];
+		fread(image, width * height * sizeof(uint16_t), 4, f);
+		fclose(f);
+		processor.load_reference(image, ref_after_lut);
+		delete[] image;
+	}
+
 	result = clip->GetFrameCount(&frameCount);
 
 	unsigned long output_delay = window_size;
+	if(single) {
+		output_delay = frameCount;
+	}
 	if(output_delay > frameCount) {
 		output_delay = frameCount;
 	}
@@ -303,6 +349,17 @@ int main(int argc, const char** argv)
 			gain = (float) atof(argv[1]);
 			argc--;
 			argv++;
+		} else if(!strcmp(*argv, "-r") && argc > 1) {
+			ref_filename = argv[1];
+			argc--;
+			argv++;
+		} else if(!strcmp(*argv, "-L")) {
+			ref_after_lut = true;
+		} else if(!strcmp(*argv, "-s")) {
+			single = true;
+		} else if(!strcmp(*argv, "-R")) {
+			raw_dump = true;
+			single = true;
 		} else if(!strcmp(*argv, "-w") && argc > 1) {
 			int win = atoi(argv[1]);
 			if(win < 0) {
